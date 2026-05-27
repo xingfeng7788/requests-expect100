@@ -257,6 +257,9 @@ class SessionRedirectMixin:
                     prepared_request.headers.pop(header, None)
                 prepared_request.body = None
 
+            # Expect: 100-continue 不随任何重定向传递到新目标
+            prepared_request.headers.pop("Expect", None)
+
             headers = prepared_request.headers
             headers.pop("Cookie", None)
 

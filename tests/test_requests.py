@@ -3102,3 +3102,55 @@ def test_expect100_param_accepted():
     with patch.object(HTTPAdapter, "send", fake_adapter_send):
         resp = s.post("http://httpbin.org/post", data=b"hello", expect100=False)
     assert resp.status_code == 200
+
+
+def test_expect100_header_stripped_on_302_redirect():
+    """302 重定向时 Expect header 应被清除"""
+    from unittest.mock import patch, MagicMock
+    from requests.adapters import HTTPAdapter
+    from requests.models import Response
+    from requests.structures import CaseInsensitiveDict
+
+    s = requests.Session()
+    call_count = [0]
+    captured_headers = [None]
+
+    def fake_send(adapter_self, request, **kwargs):
+        call_count[0] += 1
+        r = Response()
+        if call_count[0] == 1:
+            # 第一次：返回 302
+            r.status_code = 302
+            r.headers = CaseInsensitiveDict({"Location": "http://example.com/final"})
+        else:
+            # 第二次（重定向后）：记录 headers，返回 200
+            captured_headers[0] = dict(request.headers)
+            r.status_code = 200
+            r.headers = CaseInsensitiveDict()
+        r.raw = MagicMock()
+        r.raw.status = r.status_code
+        r.raw.headers = dict(r.headers)
+        r.raw.reason = "OK" if r.status_code == 200 else "Found"
+        r.raw.read = MagicMock(return_value=b"")
+        r.raw.release_conn = MagicMock()
+        r.raw.get_redirect_location = MagicMock(return_value=None)
+        r.reason = r.raw.reason
+        r.url = request.url
+        r.request = request
+        r.encoding = "utf-8"
+        r._content = b""
+        r._content_consumed = True
+        return r
+
+    with patch.object(HTTPAdapter, "send", fake_send):
+        resp = s.post(
+            "http://example.com/upload",
+            data=b"hello",
+            expect100=True,
+            allow_redirects=True,
+        )
+
+    assert call_count[0] == 2
+    # 重定向后的请求不应包含 Expect header
+    assert captured_headers[0] is not None
+    assert "Expect" not in captured_headers[0]
