@@ -3152,7 +3152,7 @@ def test_expect100_header_stripped_on_302_redirect():
 
     assert call_count[0] == 2
     # 重定向后的请求不应包含 Expect header
-    assert captured_headers[0] is not None
+    assert "Expect" not in captured_headers[0]
 
 
 def test_expect100_via_header_preserved_in_prepare():
