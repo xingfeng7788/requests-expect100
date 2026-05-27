@@ -639,6 +639,7 @@ class HTTPAdapter(BaseAdapter):
         verify: _t.VerifyType = True,
         cert: _t.CertType = None,
         proxies: dict[str, str] | None = None,
+        expect100: bool = False,
     ) -> Response:
         """Sends PreparedRequest object. Returns Response object.
 
@@ -653,6 +654,9 @@ class HTTPAdapter(BaseAdapter):
             must be a path to a CA bundle to use
         :param cert: (optional) Any user-provided SSL certificate to be trusted.
         :param proxies: (optional) The proxies dictionary to apply to the request.
+        :param expect100: (optional) Whether to use the Expect: 100-continue two-phase
+            send protocol. If True (or if the request already has an Expect header),
+            the request body is withheld until the server replies with 100 Continue.
         :rtype: requests.Response
         """
 
@@ -692,20 +696,60 @@ class HTTPAdapter(BaseAdapter):
         else:
             resolved_timeout = TimeoutSauce(connect=timeout, read=timeout)
 
+        _expect100 = expect100 or (
+            request.headers.get("Expect", "").lower() == "100-continue"
+        )
+
         try:
-            resp = conn.urlopen(
-                method=request.method,
-                url=url,
-                body=request.body,  # type: ignore[arg-type]  # urllib3 stubs don't accept Iterable[bytes | str]
-                headers=request.headers,  # type: ignore[arg-type]  # urllib3#3072
-                redirect=False,
-                assert_same_host=False,
-                preload_content=False,
-                decode_content=False,
-                retries=self.max_retries,
-                timeout=resolved_timeout,
-                chunked=chunked,
-            )
+            if _expect100 and request.body is not None:
+                # Phase 1: send headers only (body=None), keeping original
+                # Content-Length so the server knows how much data to expect.
+                resp = conn.urlopen(
+                    method=request.method,
+                    url=url,
+                    body=None,
+                    headers=request.headers,  # type: ignore[arg-type]  # urllib3#3072
+                    redirect=False,
+                    assert_same_host=False,
+                    preload_content=False,
+                    decode_content=False,
+                    retries=self.max_retries,
+                    timeout=resolved_timeout,
+                    chunked=False,
+                )
+
+                if resp.status == 100:
+                    # Phase 2: server confirmed, send the full body without Expect header.
+                    headers_without_expect = request.headers.copy()
+                    headers_without_expect.pop("Expect", None)
+                    resp = conn.urlopen(
+                        method=request.method,
+                        url=url,
+                        body=request.body,  # type: ignore[arg-type]  # urllib3 stubs don't accept Iterable[bytes | str]
+                        headers=headers_without_expect,  # type: ignore[arg-type]  # urllib3#3072
+                        redirect=False,
+                        assert_same_host=False,
+                        preload_content=False,
+                        decode_content=False,
+                        retries=self.max_retries,
+                        timeout=resolved_timeout,
+                        chunked=chunked,
+                    )
+                # Non-100 responses (3xx/4xx/5xx) fall through to build_response as-is.
+            else:
+                resp = conn.urlopen(
+                    method=request.method,
+                    url=url,
+                    body=request.body,  # type: ignore[arg-type]  # urllib3 stubs don't accept Iterable[bytes | str]
+                    headers=request.headers,  # type: ignore[arg-type]  # urllib3#3072
+                    redirect=False,
+                    assert_same_host=False,
+                    preload_content=False,
+                    decode_content=False,
+                    retries=self.max_retries,
+                    timeout=resolved_timeout,
+                    chunked=chunked,
+                )
 
         except (ProtocolError, OSError) as err:
             raise ConnectionError(err, request=request)
