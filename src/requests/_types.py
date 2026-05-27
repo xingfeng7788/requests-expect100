@@ -161,6 +161,7 @@ if TYPE_CHECKING:
         stream: bool | None
         verify: VerifyType | None
         cert: CertType
+        expect100: bool
 
     class RequestKwargs(BaseRequestKwargs, total=False):
         """kwargs for request(), options(), head(), delete()."""
