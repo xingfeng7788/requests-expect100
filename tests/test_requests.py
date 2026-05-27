@@ -3066,3 +3066,39 @@ def test_json_decode_errors_are_serializable_deserializable():
     )
     deserialized_error = pickle.loads(pickle.dumps(json_decode_error))
     assert repr(json_decode_error) == repr(deserialized_error)
+
+
+def test_expect100_param_accepted():
+    """expect100=False 参数应被接受不报错"""
+    s = requests.Session()
+    # 只验证参数被接受，不发真实请求
+    req = requests.Request("POST", "http://httpbin.org/post", data=b"hello")
+    prep = s.prepare_request(req)
+    # Session.request() 接受 expect100 参数
+    # 用 mock 避免真实网络请求
+    from unittest.mock import patch, MagicMock
+    from requests.adapters import HTTPAdapter
+    from requests.models import Response
+    from requests.structures import CaseInsensitiveDict
+
+    def fake_adapter_send(self_adapter, request, **kwargs):
+        r = Response()
+        r.status_code = 200
+        r.headers = CaseInsensitiveDict()
+        r.raw = MagicMock()
+        r.raw.status = 200
+        r.raw.headers = {}
+        r.raw.reason = "OK"
+        r.raw.read = MagicMock(return_value=b"")
+        r.raw.release_conn = MagicMock()
+        r.reason = "OK"
+        r.url = "http://httpbin.org/post"
+        r.request = request
+        r.encoding = "utf-8"
+        r._content = b""
+        r._content_consumed = True
+        return r
+
+    with patch.object(HTTPAdapter, "send", fake_adapter_send):
+        resp = s.post("http://httpbin.org/post", data=b"hello", expect100=False)
+    assert resp.status_code == 200

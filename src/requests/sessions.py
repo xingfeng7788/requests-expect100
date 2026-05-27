@@ -572,6 +572,7 @@ class Session(SessionRedirectMixin):
         verify: _t.VerifyType | None = None,
         cert: _t.CertType = None,
         json: _t.JsonType = None,
+        expect100: bool = False,
     ) -> Response:
         """Constructs a :class:`Request <Request>`, prepares it and sends it.
         Returns :class:`Response <Response>` object.
@@ -636,6 +637,9 @@ class Session(SessionRedirectMixin):
 
         assert _is_prepared(prep)
 
+        if expect100 or prep.headers.get("Expect", "").lower() == "100-continue":
+            prep.headers["Expect"] = "100-continue"
+
         proxies = proxies or {}
 
         settings = self.merge_environment_settings(
@@ -646,6 +650,7 @@ class Session(SessionRedirectMixin):
         send_kwargs = {
             "timeout": timeout,
             "allow_redirects": allow_redirects,
+            "expect100": prep.headers.get("Expect", "").lower() == "100-continue",
         }
         send_kwargs.update(settings)
         resp = self.send(prep, **send_kwargs)
@@ -771,6 +776,7 @@ class Session(SessionRedirectMixin):
 
         # Set up variables needed for resolve_redirects and dispatching of hooks
         allow_redirects = kwargs.pop("allow_redirects", True)
+        expect100 = kwargs.pop("expect100", False)
         stream = kwargs.get("stream")
         hooks = request.hooks
 
@@ -781,7 +787,7 @@ class Session(SessionRedirectMixin):
         start = preferred_clock()
 
         # Send the request
-        r = adapter.send(request, **kwargs)
+        r = adapter.send(request, expect100=expect100, **kwargs)
 
         # Total elapsed time of the request (approximately)
         elapsed = preferred_clock() - start
