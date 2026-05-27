@@ -3153,4 +3153,59 @@ def test_expect100_header_stripped_on_302_redirect():
     assert call_count[0] == 2
     # 重定向后的请求不应包含 Expect header
     assert captured_headers[0] is not None
-    assert "Expect" not in captured_headers[0]
+
+
+def test_expect100_via_header_preserved_in_prepare():
+    """手动设置 Expect header 在 prepare_request 后应被保留"""
+    s = requests.Session()
+    req = requests.Request(
+        "POST",
+        "http://example.com/upload",
+        data=b"hello world",
+        headers={"Expect": "100-continue"},
+    )
+    prep = s.prepare_request(req)
+    assert prep.headers.get("Expect") == "100-continue"
+
+
+def test_expect100_false_no_header_injected():
+    """expect100=False 且未手动设置时，PreparedRequest 不应有 Expect header"""
+    s = requests.Session()
+    req = requests.Request("POST", "http://example.com/upload", data=b"hello")
+    prep = s.prepare_request(req)
+    assert "Expect" not in prep.headers
+
+
+def test_expect100_true_injects_expect_header_in_send():
+    """expect100=True 时 adapter.send() 收到的 request 应带 Expect: 100-continue"""
+    from unittest.mock import patch, MagicMock
+    from requests.adapters import HTTPAdapter
+    from requests.models import Response
+    from requests.structures import CaseInsensitiveDict
+
+    s = requests.Session()
+    captured_headers = {}
+
+    def fake_send(adapter_self, request, **kwargs):
+        captured_headers.update(dict(request.headers))
+        r = Response()
+        r.status_code = 200
+        r.headers = CaseInsensitiveDict()
+        r.raw = MagicMock()
+        r.raw.status = 200
+        r.raw.headers = {}
+        r.raw.reason = "OK"
+        r.raw.read = MagicMock(return_value=b"")
+        r.raw.release_conn = MagicMock()
+        r.reason = "OK"
+        r.url = "http://example.com/upload"
+        r.request = request
+        r.encoding = "utf-8"
+        r._content = b""
+        r._content_consumed = True
+        return r
+
+    with patch.object(HTTPAdapter, "send", fake_send):
+        s.post("http://example.com/upload", data=b"hello", expect100=True)
+
+    assert captured_headers.get("Expect") == "100-continue"
