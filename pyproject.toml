@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "requests"
-description = "Python HTTP for Humans."
+name = "requests-expect100"
+description = "requests with Expect: 100-continue support"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [

@@ -54,6 +54,44 @@ Requests is ready for the demands of building robust and reliable HTTP–speakin
 - Streaming Downloads
 - Automatic honoring of `.netrc`
 - Chunked HTTP Requests
+- **Expect: 100-continue Support**
+
+## Expect: 100-continue Support
+
+This fork adds support for the HTTP `Expect: 100-continue` mechanism (RFC 7231), which allows clients to check whether a server will accept a request before sending a large body — saving bandwidth on rejection.
+
+### How it works
+
+1. Client sends request headers with `Expect: 100-continue` (body withheld)
+2. Server replies `100 Continue` → client sends the body
+3. Server replies with any other status (e.g. `301`, `417`) → client skips the body entirely
+
+### Usage
+
+**Option 1 — `expect100` parameter (recommended):**
+
+```python
+import requests
+
+with open("large_file.bin", "rb") as f:
+    resp = requests.post("https://example.com/upload", data=f, expect100=True)
+```
+
+**Option 2 — manual header (auto-detected):**
+
+```python
+resp = requests.post(
+    "https://example.com/upload",
+    data=large_body,
+    headers={"Expect": "100-continue"},
+)
+```
+
+Both approaches are equivalent. When `expect100=True` is set, the `Expect: 100-continue` header is injected automatically.
+
+### Redirect behaviour
+
+The `Expect` header is automatically stripped on any redirect, so it is never forwarded to the redirect target.
 
 ## Cloning the repository
 
@@ -62,7 +100,7 @@ fetch.fsck.badTimezone=ignore` flag to avoid an error about a bad commit timesta
 [this issue](https://github.com/psf/requests/issues/2690) for more background):
 
 ```shell
-git clone -c fetch.fsck.badTimezone=ignore https://github.com/psf/requests.git
+git clone -c fetch.fsck.badTimezone=ignore https://github.com/xingfeng7788/requests-expect100.git
 ```
 
 You can also apply this setting to your global Git config:
